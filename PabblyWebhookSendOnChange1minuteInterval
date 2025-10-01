@@ -1,0 +1,258 @@
+/** @OnlyCurrentDoc */
+function onOpen(e) {
+  SpreadsheetApp.getUi().createMenu('Pabbly Webhooks')
+  .addItem('Send rows every minute', 'setup')
+  .addItem('Help', 'help')
+  .addToUi();
+}
+
+function setup() {
+  var trigOwner = PropertiesService.getDocumentProperties().getProperty('trigOwner');
+  var sheetId = PropertiesService.getDocumentProperties().getProperty('sheetId');
+  var setup = PropertiesService.getDocumentProperties().getProperty('setup');
+  var sheet = !sheetId ? false : SpreadsheetApp.getActive().getSheets().find(sh => sh.getSheetId() == sheetId);
+  var n = !sheet ? sheetId : sheet.getName();
+  var config = (!trigOwner ? '' : `Trigger owner: ${trigOwner}.`)
+  + (!sheetId ? '' : ` Sheet: ${n}.`)
+  + (!setup ? '' : `\nWebhook & last column: ${setup}.`);
+  if (config.length) {
+    config = `\n* Current configuration:- ${config}\n`;
+  }
+  var title = 'Setup Trigger for Pabbly Connect?';
+  var body = `The trigger will auto-send new rows from Google Sheets every minute.
+
+  1. Set / Update Trigger: Enter the webhook URL and click the "Yes" button to set the trigger. Optionally set the last column name which when filled will trigger and send the row.
+
+  Input examples:-
+  a. Webhook URL only: https://connect.pabbly.com/workflow/sendwebhookdata/IjU33
+  b. Webhook & last column: https://connect.pabbly.com/workflow/sendwebhookdata/IjU33, D
+  (Assuming D is the last column to be sent. The new row will only be sent if there is data in the Column D. Webhook URL and the last column name should be separated by a comma.)
+
+  2. Remove Existing Trigger: Click the "No" button if you wish to remove the trigger you set earlier.
+  ${config}\n`;
+
+  var ui = SpreadsheetApp.getUi();
+  var result = ui.prompt(title, body, ui.ButtonSet.YES_NO_CANCEL);
+
+  var button = result.getSelectedButton();
+  var setup = result.getResponseText();
+  if (button == ui.Button.YES) {
+    if (!trigOwner) {
+      ScriptApp.newTrigger('onSchedule')
+      .timeBased()
+      .everyMinutes(1)
+      .create();
+      PropertiesService.getDocumentProperties().setProperty('trigOwner', Session.getEffectiveUser().getEmail());
+    }
+    PropertiesService.getDocumentProperties().setProperty('sheetId', SpreadsheetApp.getActiveSheet().getSheetId().toString());
+    PropertiesService.getDocumentProperties().setProperty('setup', setup);
+    //PropertiesService.getDocumentProperties().setProperty('lastSentRow', 1);
+
+    //store current table state (Muaaz Aamir)
+
+    var lastColSepIndex = setup.lastIndexOf(',');
+    var col_end;
+    if (lastColSepIndex == -1) {
+      let i = sheet.getDataRange().getLastColumn();
+      let l = '';
+      let c;
+      while (i > 0) {
+        c = (i - 1) % 26;
+        l = String.fromCharCode(c + 65) + l;
+        i = (i - c - 1) / 26;
+      }
+      col_end = l;
+    } else {
+      
+      col_end = setup.substring(lastColSepIndex+1).trim();
+    }
+
+    
+    var lastRow = parseInt(sheet.getLastRow(), 10);
+    
+    var headers = sheet.getRange(`A1:${col_end}1`).getDisplayValues()[0]; 
+    var values = sheet.getRange(`A${parseInt(2,10)}:${col_end+lastRow}`).getDisplayValues();
+    var currentState = getJsonStringFromArray(values);
+    PropertiesService.getDocumentProperties().setProperty('lastState', currentState);
+    //////////////
+
+
+    ui.alert('Trigger set successfully!');
+  } else if (button == ui.Button.NO) {
+    PropertiesService.getDocumentProperties().deleteAllProperties();
+    var msg = 'Cleared configurations.';
+    if (Session.getEffectiveUser().getEmail() == trigOwner) {
+      var triggers = ScriptApp.getUserTriggers(SpreadsheetApp.getActive());
+      for (var i = 0; i < triggers.length; i++) {
+        ScriptApp.deleteTrigger(triggers[i]);
+      }
+      msg += '\nRemoved the trigger.';
+    } else {
+      msg += `Use the account ${trigOwner} to remove the trigger.`;
+    }
+    ui.alert(msg);
+  }
+}
+
+function help() {
+  var htmlOutput = HtmlService
+  .createHtmlOutput('<p>Refer detailed guide <a href="https://forum.pabbly.com/threads/google-sheets.12066/" target="_blank">here</a>.</p>')
+  .setWidth(300)
+  .setHeight(100);
+  SpreadsheetApp.getUi().showModelessDialog(htmlOutput, 'Pabbly Webhooks Help');
+}
+function getTime() {
+  // Get the current time
+  var currentTime = new Date();
+  
+  // Format the current time in a readable format
+  var formattedTime = Utilities.formatDate(currentTime, Session.getScriptTimeZone(), "MMM dd, yyyy HH:mm:ss");
+  
+  return formattedTime;
+
+}
+// function onSchedule(){
+//   every10SecondsFor1minute();
+//   for(var i=0; i <5 ; i++){
+//       Utilities.sleep(10000);
+//       every10SecondsFor1minute();
+//   }
+// }
+function onSchedule() {
+  
+  const start = Date.now();
+  var ss = SpreadsheetApp.getActive();
+  var sheetId = PropertiesService.getDocumentProperties().getProperty('sheetId');
+  var sheet = ss.getSheets().find(sh => sh.getSheetId() == sheetId);
+  var setup = PropertiesService.getDocumentProperties().getProperty('setup');
+  
+  if (!sheet || !setup) {return;}
+
+  var webhook_url, end_column;
+  var li = setup.lastIndexOf(',');
+  if (li == -1) {
+    webhook_url = setup;
+    let i = sheet.getDataRange().getLastColumn();
+    let l = '';
+    let c;
+    while (i > 0) {
+      c = (i - 1) % 26;
+      l = String.fromCharCode(c + 65) + l;
+      i = (i - c - 1) / 26;
+    }
+    end_column = l;
+  } else {
+    webhook_url = setup.substring(0,li);
+    end_column = setup.substring(li+1).trim();
+  }
+  
+  if (!webhook_url || !end_column) {return;}
+ 
+  ///// check differences (muaaz aamir)
+  var rowEnd = parseInt(sheet.getLastRow(), 10);
+  var oldState;
+  var oldStateArr;
+
+  
+  
+  //Logger.log("old state arr: "+oldStateArr);
+  var changedRows = [];
+  if(oldStateArr==null) oldStateArr  = [];
+  if (timeUp(start)) {return;}
+  var headers = sheet.getRange(`A1:${end_column}1`).getDisplayValues()[0]; 
+  var values;
+  oldState = PropertiesService.getDocumentProperties().getProperty('lastState'); //Get Old Stored State
+  oldStateArr = getJArrayFromJsonString(oldState);
+  for(var l = 0; l < 5 ; l++){
+    Logger.log("Run: "+l);
+    SpreadsheetApp.flush();
+     sheet = ss.getSheets().find(sh => sh.getSheetId() == sheetId);
+   setup = PropertiesService.getDocumentProperties().getProperty('setup');
+      values = sheet.getRange(`A2:${end_column+rowEnd}`).getDisplayValues();
+      
+      
+      Logger.log("values: "+values);
+      Logger.log("oldStateArr: "+oldStateArr);
+      for(var i = 0 ; i < values.length ; i++){ 
+        var oldRow = oldStateArr[i];
+        var valueRow = values[i];
+        
+        if(oldRow!=null && valueRow!=null){
+            for(var j = 0 ; j < values[i].length ; j++){
+              //Logger.log("Old Value: "+oldStateArr[i][j]);
+              //Logger.log("New Value: "+values[i][j]);
+                  if (oldStateArr[i][j] !== values[i][j]) { 
+                    //Logger.log("Condition passsed");
+                    changedRows.push(i);
+                  
+                    break;
+                  }
+                }
+        }else{
+          //Logger.log("inside else");
+          changedRows.push(i);
+        }
+        
+      }
+      Logger.log("Changed Array"+changedRows);
+    
+      for(var k = 0 ; k < changedRows.length; k++){
+        connectWebhook(
+          convertToJson(values[changedRows[k]],headers,ss.getName(),ss.getId(),sheet.getName(),sheetId,end_column,changedRows[k]+2),
+              webhook_url
+        )
+      }
+      
+      PropertiesService.getDocumentProperties().setProperty('lastState', getJsonStringFromArray(values));
+      changedRows = [];
+      oldStateArr = values;
+      values = null;
+      
+      
+      Logger.log("Saving new state");
+      //Logger.log(currentState);
+      
+      /////////////
+      Utilities.sleep(10000);
+  }
+  
+  
+}
+
+function timeUp(start) {
+  return (Date.now() - start) > 45000;
+}
+
+function connectWebhook(data,url) {
+  var options = {
+    'method': 'post',
+    'payload': JSON.stringify(data)
+  };
+  UrlFetchApp.fetch(url,options);
+}
+
+function convertToJson(values,headers,spreadsheetName,spreadsheetID,sheetName,sheetID,triggerColumn,rowIndex) {
+  var data = {};
+  for (var i in values) {
+    data[headers[i]] = values[i];
+  }
+  data.SpreadsheetName = spreadsheetName;
+  data.SpreadsheetID = spreadsheetID;
+  data.SheetName = sheetName;
+  data.SheetID = sheetID;
+  data.TriggerColumn = triggerColumn;
+  data.RowIndex = rowIndex;
+  return data;
+}
+function getJsonStringFromArray(array) {
+  var jsonString = JSON.stringify(array);
+  return jsonString;
+}
+function getJArrayFromJsonString(jsonString) {
+  var array = JSON.parse(jsonString);
+  return array;
+}
+function logProperties() {
+  var properties =  PropertiesService.getDocumentProperties().getProperty('lastState');
+  Logger.log(getJArrayFromJsonString(properties));
+}
