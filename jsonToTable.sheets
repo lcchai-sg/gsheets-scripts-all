@@ -1,0 +1,49 @@
+// custom menu
+function onOpen() {
+  var ui = SpreadsheetApp.getUi();
+  ui.createMenu('Fetch Call Queue')
+      .addItem('Fetch now','displayArtistData')
+      .addToUi();
+}
+
+// function to call iTunes API
+function calliTunesAPI() {
+
+var url  = "<your_url_here>"
+  
+  // Call the iTunes API
+  var response = UrlFetchApp.fetch(url);
+  
+  // Parse the JSON reply
+  var json = response.getContentText();
+  return JSON.parse(json);
+  
+}
+
+
+function displayArtistData() {
+  
+  // pick up the search term from the Google Sheet
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getActiveSheet();
+  
+  var tracks = calliTunesAPI();
+  
+  var results = tracks["content"];
+  var len = tracks["totalElements"];
+  
+  var output = []
+  
+  results.forEach(function(elem,i) {
+    var hyperlink = '=hyperlink("http://evolvfit.net/api' + elem["markDoneUrl"] + '","Called this muthafucka")';
+    output.push([elem["_id"],elem["firstName"],elem["lastName"],elem["phoneNumber"],elem["callDate"],elem["callTime"],hyperlink]);
+//    sheet.setRowHeight(i+2,65);
+  });
+  
+  // clear any previous content
+  sheet.getRange(2,1,500,7).clearContent();
+  
+  // paste in the values
+  sheet.getRange(2,1,len,7).setValues(output);
+    
+}
