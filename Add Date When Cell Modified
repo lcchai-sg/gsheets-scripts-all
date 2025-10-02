@@ -1,0 +1,7 @@
+function addTimeAuto(event) {
+  var sh = event.source.getActiveSheet();
+  if(sh.getName() !== 'New' || [2, 4].indexOf(event.range.columnStart) == -1 || event.range.rowStart < 2) return;
+  event.range.offset(0, 2).setValue(event.value ? new Date() : null)
+}
+
+//This will add the date when a cell is modified.
