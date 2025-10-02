@@ -1,0 +1,131 @@
+function sumTotals() {
+  var sheet = SpreadsheetApp.getActiveSheet();
+  var rows = sheet.getDataRange();
+  var numRows = rows.getNumRows();
+  var values = rows.getValues();
+  
+  var TotalPayout = new Object();
+  
+  for (var i = 0; i <= numRows - 1; i++) {
+    var Row = values[i];  //grab values from current row (Date not needed)
+    var tempStr = Row[3];  //tempStr is name of payout
+    var Debit = Row[4];
+    var DebitInt = parseFloat(Debit);
+    var Credit = Row[6];
+    var CreditInt = parseFloat(Credit);
+    
+    if (Row[5] == "Debit Subtotals") {
+    } else if (Debit == "") {                           //Debit
+      sheet.getRange(i+1, 6).setValue("");       //if no amount, then no sum.
+    } else {
+      if (TotalPayout.hasOwnProperty(tempStr))  //If name already exists in object as property, then
+      {                                         // += the amount, delete previous sum and set new sum
+        TotalPayout[tempStr] += DebitInt;
+        sheet.getRange(i, 6).setValue("");
+        sheet.getRange(i+1, 6).setValue("$" + TotalPayout[tempStr].toFixed(2));
+      }
+      else {                                    //Name does NOT exist in object, so
+        TotalPayout[tempStr] = DebitInt;       //create property with amount.
+        sheet.getRange(i+1, 6).setValue("$" + DebitInt);       //set sum to amount
+      }
+    }
+    
+    if (Row[7] == "Credit Subtotals") {
+    } else if (Credit == "") {                           //Credit
+      sheet.getRange(i+1, 8).setValue("");       //if no amount, then no sum.
+    } else {
+      if (TotalPayout.hasOwnProperty(tempStr))  //If name already exists in object as property, then
+      {                                         // += the amount, delete previous sum and set new sum
+        TotalPayout[tempStr] += CreditInt;
+        sheet.getRange(i, 8).setValue("");
+        sheet.getRange(i+1, 8).setValue("$" + TotalPayout[tempStr].toFixed(2));
+      }
+      else {                                    //Name does NOT exist in object, so
+        TotalPayout[tempStr] = CreditInt;       //create property with amount.
+        sheet.getRange(i+1, 8).setValue("$" + CreditInt);       //set sum to amount
+      }
+    }
+  }
+  Logger.log(TotalPayout);  
+//  sheet.getRange(3, 4).setValue("42");  //get Row 3, Column 4
+};
+
+function SortByDate(){                         //Find any instances of "Date", deletes the row, then sorts by Date , and re-inserts header (Date, etc.)
+  var sheet = SpreadsheetApp.getActiveSheet();
+  var rows = sheet.getDataRange();
+  var numRows = rows.getNumRows();
+  var values = rows.getValues();
+  var NumDeleted = 0;
+  
+  for (var i = 0; i <= numRows-1; i++)
+  {
+    var Row = values[i];
+    if (Row[0] == "Date") {
+      Logger.log("found Date-string in row " + i);
+      sheet.deleteRow(i-NumDeleted+1);
+      NumDeleted += 1;
+    }
+  }
+  
+  sheet.sort(1);
+
+  sheet.insertRowBefore(1);
+  var TitleRow = [
+    ["Date", "Check #", "Payee", "Category", "Debit", "Debit Subtotals", "Credit", "Credit Subtotals", "Balance"]
+    ];
+  sheet.getRange("A1:I1").setValues(TitleRow);
+  sheet.getRange("A1:I1").setFontWeight("Bold");
+}
+
+
+function SortByCategory(){                         //Find any instances of "Date", deletes the row, then sorts by Name , and re-inserts header (Date, etc.)
+  var sheet = SpreadsheetApp.getActiveSheet();
+  var rows = sheet.getDataRange();
+  var numRows = rows.getNumRows();
+  var values = rows.getValues();
+  var NumDeleted = 0;
+  
+  for (var i = 0; i <= numRows-1; i++)
+  {
+    var Row = values[i];
+    if (Row[0] == "Date") {
+      Logger.log("found Date-string in row " + i);
+      sheet.deleteRow(i-NumDeleted+1);
+      NumDeleted += 1;
+    }
+  }
+  
+  sheet.sort(4);
+
+  sheet.insertRowBefore(1);
+  var TitleRow = [
+    ["Date", "Check #", "Payee", "Category", "Debit", "Debit Subtotals", "Credit", "Credit Subtotals", "Balance"]
+    ];
+  sheet.getRange("A1:I1").setValues(TitleRow);
+  sheet.getRange("A1:I1").setFontWeight("Bold");
+}
+
+/**
+ * Adds a custom menu to the active spreadsheet, containing a single menu item
+ * for invoking the readRows() function specified above.
+ * The onOpen() function, when defined, is automatically invoked whenever the
+ * spreadsheet is opened.
+ * For more information on using the Spreadsheet API, see
+ * https://developers.google.com/apps-script/service_spreadsheet
+ */
+function onOpen() {
+  var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  var entries = [{
+    name : "Sub Totals",
+    functionName : "sumTotals"
+  },
+                 {
+    name : "Sort by Date",
+    functionName : "SortByDate"
+  },
+                 {
+    name : "Sort by Category",
+    functionName : "SortByCategory"
+  }];
+  spreadsheet.addMenu("Raymond's scripts", entries);
+};
